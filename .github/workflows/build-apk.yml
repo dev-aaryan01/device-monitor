@@ -1,0 +1,83 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── नया स्टेप: ZIP को अनज़िप करें ──────────────────────────────────
+      - name: Unzip project
+        run: |
+          mkdir -p artifacts/android-app
+          unzip DeviceMonitor-full.zip -d artifacts/android-app/
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install required Android SDK components
+        run: |
+          sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools"
+
+      # ── 5. Install JS dependencies ────────────────────────────────────
+      - name: Install dependencies
+        working-directory: artifacts/android-app
+        run: pnpm install --frozen-lockfile
+
+      # ── 6. Build the Vite web app ─────────────────────────────────────
+      - name: Build web app
+        working-directory: artifacts/android-app
+        run: BASE_PATH="/" PORT=3000 pnpm run build
+
+      # ── 7. Capacitor sync ─────────────────────────────────────────────
+      - name: Capacitor sync
+        working-directory: artifacts/android-app
+        run: npx cap sync android
+
+      # ── 8. Make Gradle wrapper executable ────────────────────────────
+      - name: Make gradlew executable
+        working-directory: artifacts/android-app/android
+        run: chmod +x gradlew
+
+      # ── 9. Build debug APK ──────────────────────────────────────────
+      - name: Build Debug APK
+        working-directory: artifacts/android-app/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      # ── 10. Upload APK ───────────────────────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeviceMonitor-debug-apk
+          path: artifacts/android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
